@@ -33,8 +33,8 @@ const navItems: NavItem[] = [
 export default function Sidebar() {
   const pathname = usePathname()
   const [produccionOpen, setProduccionOpen] = useState(true)
-  const workerStatus: 'idle' | 'active' | 'error' = 'idle'
-  const rpmUsage = 23
+  const [workerStatus] = useState<'idle' | 'active' | 'error'>('idle')
+  const [rpmUsage] = useState(23)
 
   return (
     <div className="w-56 flex-shrink-0 flex flex-col h-screen border-r" style={{ background: '#18181b', borderColor: '#27272a' }}>
