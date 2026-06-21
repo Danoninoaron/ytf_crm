@@ -19,8 +19,11 @@ const MODELS = [
   { id: 'imagen-3.0-fast-generate-001',              label: 'Imagen 3.0 Fast',                tier: '$0.020/img' },
 ]
 
-function detectApiType(key: string): ApiType {
-  return key.startsWith('AIza') ? 'ai_studio' : 'vertex'
+function detectApiType(key: string): ApiType | null {
+  if (key.startsWith('AIza')) return 'ai_studio'
+  // AQ. and other Google AI Studio key formats
+  if (key.startsWith('AQ.')) return 'ai_studio'
+  return null  // unknown — don't override user's selection
 }
 
 function MaskedInput({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder?: string }) {
@@ -31,18 +34,18 @@ function MaskedInput({ value, onChange, placeholder }: { value: string; onChange
       <input
         type={visible ? 'text' : 'password'}
         value={value}
-        onChange={e => onChange(e.target.value)}
+        onChange={(e: React.ChangeEvent<HTMLInputElement>) => onChange(e.target.value)}
         placeholder={placeholder}
         className="w-full rounded-lg px-3 py-2 text-sm outline-none border pr-20"
         style={{ background: '#09090b', borderColor: '#27272a', color: '#f4f4f5' }}
       />
       <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
-        {detected && (
+        {detected !== null && (
           <span className="text-[10px] px-1.5 py-0.5 rounded font-mono" style={{
-            background: detected === 'ai_studio' ? 'rgba(16,185,129,0.15)' : 'rgba(99,102,241,0.15)',
-            color: detected === 'ai_studio' ? '#34d399' : '#818cf8'
+            background: 'rgba(16,185,129,0.15)',
+            color: '#34d399'
           }}>
-            {detected === 'ai_studio' ? 'AI Studio' : 'Vertex'}
+            AI Studio
           </span>
         )}
         <button type="button" onClick={() => setVisible(v => !v)}>
@@ -85,7 +88,8 @@ function GeminiCard() {
     }
   }, [])
 
-  const resolvedType: ApiType = apiKey.trim() ? detectApiType(apiKey) : apiType
+  // Always use user's explicit selection; only auto-switch when key prefix is unambiguous
+  const resolvedType: ApiType = apiType
 
   const persist = useCallback((patch: Partial<ApiConfig>) => {
     saveApiConfig(patch)
@@ -95,12 +99,15 @@ function GeminiCard() {
 
   const handleKeyChange = (v: string) => {
     setApiKey(v)
-    if (v.trim()) {
-      const t = detectApiType(v)
-      setApiType(t)
-      persist({ apiKey: v, type: t, testStatus: 'untested' })
-      setTestStatus('idle')
+    const detected = detectApiType(v)
+    // Only auto-switch type when detection is unambiguous (AIza / AQ. = AI Studio)
+    if (detected !== null) {
+      setApiType(detected)
+      persist({ apiKey: v, type: detected, testStatus: 'untested' })
+    } else {
+      persist({ apiKey: v, testStatus: 'untested' })
     }
+    setTestStatus('idle')
   }
 
   const handleSave = () => {

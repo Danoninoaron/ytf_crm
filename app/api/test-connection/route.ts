@@ -11,7 +11,7 @@ export async function POST(request: NextRequest) {
   const start = Date.now()
 
   try {
-    if (apiType === 'ai_studio' || apiKey.startsWith('AIza')) {
+    if (apiType === 'ai_studio') {
       const base = customEndpoint?.trim() || 'https://generativelanguage.googleapis.com'
       const r = await fetch(
         `${base}/v1beta/models?key=${encodeURIComponent(apiKey)}`,
