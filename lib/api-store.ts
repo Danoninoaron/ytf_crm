@@ -17,7 +17,7 @@ const KEY = 'ytf_crm_api_config'
 const DEFAULTS: ApiConfig = {
   type: 'ai_studio',
   apiKey: '',
-  model: 'gemini-2.0-flash-preview-image-generation',
+  model: 'gemini-3.1-flash-image',
   imageLimit: 500,
   budget: 50,
   testStatus: 'untested',

@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import { addImages, saveQueueStats, type GeneratedImage } from '@/lib/content-store'
 import { getApiConfig, type ApiConfig } from '@/lib/api-store'
+import { recordApiCall } from '@/lib/rate-tracker'
 
 type JobStatus = 'waiting' | 'processing' | 'completed' | 'error'
 interface Job {
@@ -17,8 +18,9 @@ interface Job {
 }
 
 const AI_STUDIO_MODELS = [
-  { id: 'gemini-2.0-flash-preview-image-generation', label: 'NB 2.0 Flash Preview', price: 'FREE' },
-  { id: 'gemini-2.0-flash-exp-image-generation',     label: 'NB 2.0 Flash EXP',     price: 'FREE' },
+  { id: 'gemini-3.1-flash-image', label: 'Nano Banana 2 · 3.1 Flash ⭐', price: 'FREE' },
+  { id: 'gemini-3-pro-image',     label: 'Nano Banana Pro · 3 Pro',      price: 'FREE' },
+  { id: 'gemini-2.5-flash-image', label: 'Nano Banana · 2.5 Flash',      price: 'FREE' },
 ]
 
 const VERTEX_MODELS = [
@@ -207,6 +209,7 @@ export default function ProduccionImagenesPage() {
       await Promise.all(batch.map(async (job) => {
         const t0 = Date.now()
         try {
+          recordApiCall(cfg.model)
           const res = await fetch('/api/generate', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -220,6 +223,7 @@ export default function ProduccionImagenesPage() {
               customEndpoint: cfg.customEndpoint,
               systemPrompt,
               aspectRatio: job.aspectRatio,
+              resolution: job.resolution,
             }),
           })
 

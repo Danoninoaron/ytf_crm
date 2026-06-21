@@ -1,8 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { getRateStats } from '@/lib/rate-tracker'
 import {
   LayoutDashboard, Image, FileText, Mic, Clapperboard,
   Library, Youtube, Key, ChevronDown, ChevronRight,
@@ -34,7 +35,14 @@ export default function Sidebar() {
   const pathname = usePathname()
   const [produccionOpen, setProduccionOpen] = useState(true)
   const [workerStatus] = useState<'idle' | 'active' | 'error'>('idle')
-  const [rpmUsage] = useState(23)
+  const [rateStats, setRateStats] = useState({ rpm: 0, rpd: 0 })
+
+  useEffect(() => {
+    const tick = () => setRateStats(getRateStats())
+    tick()
+    const id = setInterval(tick, 5000)
+    return () => clearInterval(id)
+  }, [])
 
   return (
     <div className="w-56 flex-shrink-0 flex flex-col h-screen border-r" style={{ background: '#18181b', borderColor: '#27272a' }}>
@@ -131,11 +139,11 @@ export default function Sidebar() {
         <div>
           <div className="flex justify-between items-center mb-1">
             <span className="text-[10px] font-mono" style={{ color: '#52525b' }}>RPM</span>
-            <span className="text-[10px] font-mono" style={{ color: '#52525b' }}>{rpmUsage}/60</span>
+            <span className="text-[10px] font-mono" style={{ color: '#52525b' }}>{rateStats.rpm}/60</span>
           </div>
           <div className="w-full h-1 rounded-full overflow-hidden" style={{ background: '#27272a' }}>
             <div className="h-full rounded-full transition-all duration-500"
-              style={{ width: `${(rpmUsage / 60) * 100}%`, background: rpmUsage > 48 ? '#ef4444' : rpmUsage > 36 ? '#fbbf24' : '#10b981' }} />
+              style={{ width: `${Math.min((rateStats.rpm / 60) * 100, 100)}%`, background: rateStats.rpm > 48 ? '#ef4444' : rateStats.rpm > 36 ? '#fbbf24' : '#10b981' }} />
           </div>
         </div>
       </div>

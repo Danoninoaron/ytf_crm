@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <rect width="32" height="32" rx="7" fill="#09090b"/>
+  <rect x="3" y="3" width="26" height="26" rx="5" fill="#18181b"/>
+  <!-- Banana shape -->
+  <path d="M10 22 Q9 14 14 10 Q20 7 23 10 Q26 13 22 18 Q18 22 14 22 Z"
+        fill="#fbbf24" stroke="#f59e0b" stroke-width="0.5"/>
+  <path d="M10 22 Q9 14 14 10 Q17 9 19 11 Q16 14 14 18 Q12 21 10 22 Z"
+        fill="#fcd34d" opacity="0.6"/>
+  <!-- Stem -->
+  <path d="M23 10 Q25 7 24 6" stroke="#78350f" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+  <!-- Green dot (API active indicator) -->
+  <circle cx="25" cy="25" r="4" fill="#10b981"/>
+  <circle cx="25" cy="25" r="2.5" fill="#34d399"/>
+</svg>

@@ -5,7 +5,13 @@ import { randomUUID } from 'crypto'
 
 export async function POST(request: NextRequest) {
   const body = await request.json()
-  const { prompt, model, apiKey, apiType, customEndpoint, systemPrompt, aspectRatio } = body
+  const { prompt, model, apiKey, apiType, customEndpoint, systemPrompt, aspectRatio, resolution } = body
+
+  // Map UI resolution labels to API image_size values (uppercase K required by Google)
+  const IMAGE_SIZE_MAP: Record<string, string> = {
+    '512': '512px', '1K': '1K', '2K': '2K', '4K': '4K'
+  }
+  const imageSize = IMAGE_SIZE_MAP[resolution as string] || '1K'
 
   if (!apiKey?.trim()) {
     return Response.json({ ok: false, error: 'No hay API key configurada. Ve a la página de APIs.' }, { status: 400 })
@@ -53,9 +59,15 @@ export async function POST(request: NextRequest) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [{ parts: [{ text: fullPrompt }] }],
-          generationConfig: { responseModalities: ['IMAGE', 'TEXT'] }
+          generationConfig: { responseModalities: ['IMAGE', 'TEXT'] },
+          // Nano Banana models use response_format for size + aspect ratio
+          response_format: {
+            type: 'image',
+            image_size: imageSize,
+            aspect_ratio: aspectRatio || '1:1',
+          }
         }),
-        signal: AbortSignal.timeout(60000)
+        signal: AbortSignal.timeout(90000)
       })
 
       if (!r.ok) {

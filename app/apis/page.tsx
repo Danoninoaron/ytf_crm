@@ -7,16 +7,15 @@ import { getApiConfig, saveApiConfig, type ApiConfig } from '@/lib/api-store'
 type ApiType = 'ai_studio' | 'vertex'
 type TestStatus = 'idle' | 'testing' | 'ok' | 'error'
 
-const MODELS = [
-  { id: 'gemini-2.0-flash-preview-image-generation', label: 'Nano Banana 2.0 Flash Preview', tier: 'FREE' },
-  { id: 'gemini-2.0-flash-exp-image-generation',     label: 'Nano Banana 2.0 Flash EXP',     tier: 'FREE' },
-  { id: 'gemini-2.5-flash-preview-05-20',            label: 'Nano Banana 2.5 Flash Preview',  tier: 'FREE' },
-  { id: 'gemini-2.5-pro-exp-03-25',                  label: 'Nano Banana 2.5 Pro EXP',        tier: 'FREE' },
-  { id: 'gemini-2.5-flash-image',                    label: 'Nano Banana 2.5 Flash Image',    tier: 'FREE' },
-  { id: 'gemini-3.1-flash-image-preview',            label: 'Nano Banana 3.1 Flash Preview',  tier: 'FREE' },
-  { id: 'gemini-3-pro-image-preview',                label: 'Nano Banana 3 Pro Preview',      tier: 'FREE' },
-  { id: 'imagen-3.0-generate-002',                   label: 'Imagen 3.0 Generate',            tier: '$0.040/img' },
-  { id: 'imagen-3.0-fast-generate-001',              label: 'Imagen 3.0 Fast',                tier: '$0.020/img' },
+const AI_STUDIO_MODELS = [
+  { id: 'gemini-3.1-flash-image', label: 'Nano Banana 2 · 3.1 Flash ⭐', tier: 'FREE' },
+  { id: 'gemini-3-pro-image',     label: 'Nano Banana Pro · 3 Pro',      tier: 'FREE' },
+  { id: 'gemini-2.5-flash-image', label: 'Nano Banana · 2.5 Flash',      tier: 'FREE' },
+]
+const VERTEX_MODELS = [
+  { id: 'imagen-3.0-generate-002',      label: 'Imagen 3.0',         tier: '$0.040/img' },
+  { id: 'imagen-3.0-fast-generate-001', label: 'Imagen 3.0 Fast',    tier: '$0.020/img' },
+  { id: 'imagegeneration@006',          label: 'Imagen 2 (legacy)',  tier: '$0.020/img' },
 ]
 
 function detectApiType(key: string): ApiType | null {
@@ -65,7 +64,7 @@ function GeminiCard() {
   const [latency, setLatency] = useState<number | null>(null)
   const [projectId, setProjectId] = useState('')
   const [region, setRegion] = useState('us-central1')
-  const [model, setModel] = useState(MODELS[0].id)
+  const [model, setModel] = useState(AI_STUDIO_MODELS[0].id)
   const [imageLimit, setImageLimit] = useState('500')
   const [budget, setBudget] = useState('50')
   const [customEndpoint, setCustomEndpoint] = useState('')
@@ -88,8 +87,8 @@ function GeminiCard() {
     }
   }, [])
 
-  // Always use user's explicit selection; only auto-switch when key prefix is unambiguous
   const resolvedType: ApiType = apiType
+  const models = resolvedType === 'vertex' ? VERTEX_MODELS : AI_STUDIO_MODELS
 
   const persist = useCallback((patch: Partial<ApiConfig>) => {
     saveApiConfig(patch)
@@ -182,10 +181,15 @@ function GeminiCard() {
             <label className="text-xs mb-2 block" style={{ color: '#71717a' }}>Tipo de API</label>
             <div className="grid grid-cols-2 gap-2">
               {([
-                { id: 'ai_studio' as ApiType, label: 'Google AI Studio', sub: 'Plan gratuito · clave AIza...', color: '#10b981' },
+                { id: 'ai_studio' as ApiType, label: 'Google AI Studio', sub: 'Plan gratuito · clave AIza / AQ.', color: '#10b981' },
                 { id: 'vertex' as ApiType, label: 'Vertex AI', sub: 'GCP · facturación por uso', color: '#818cf8' },
               ]).map(opt => (
-                <button key={opt.id} onClick={() => { setApiType(opt.id); persist({ type: opt.id }) }}
+                <button key={opt.id} onClick={() => {
+                  setApiType(opt.id)
+                  const firstModel = opt.id === 'vertex' ? VERTEX_MODELS[0].id : AI_STUDIO_MODELS[0].id
+                  setModel(firstModel)
+                  persist({ type: opt.id, model: firstModel })
+                }}
                   className="text-left p-3 rounded-lg border transition-colors"
                   style={{
                     borderColor: resolvedType === opt.id ? opt.color : '#27272a',
@@ -224,7 +228,7 @@ function GeminiCard() {
               <select value={model} onChange={e => { setModel(e.target.value); persist({ model: e.target.value }) }}
                 className="w-full appearance-none rounded-lg px-3 py-2 text-sm outline-none border pr-8"
                 style={{ background: '#09090b', borderColor: '#27272a', color: '#f4f4f5' }}>
-                {MODELS.map(m => (
+                {models.map(m => (
                   <option key={m.id} value={m.id}>{m.label} [{m.tier}]</option>
                 ))}
               </select>
@@ -252,16 +256,18 @@ function GeminiCard() {
             </>
           )}
 
-          {/* Custom endpoint */}
-          <div>
-            <label className="text-xs mb-1.5 block" style={{ color: '#71717a' }}>
-              Endpoint personalizado <span style={{ color: '#52525b' }}>(opcional — deja vacío para usar Google AI Studio)</span>
-            </label>
-            <input value={customEndpoint} onChange={e => setCustomEndpoint(e.target.value)}
-              className="w-full rounded-lg px-3 py-2 text-sm outline-none border font-mono"
-              style={{ background: '#09090b', borderColor: '#27272a', color: '#f4f4f5' }}
-              placeholder="https://generativelanguage.googleapis.com" />
-          </div>
+          {/* Custom endpoint — only relevant for Vertex AI */}
+          {resolvedType === 'vertex' && (
+            <div>
+              <label className="text-xs mb-1.5 block" style={{ color: '#71717a' }}>
+                Endpoint personalizado <span style={{ color: '#52525b' }}>(opcional)</span>
+              </label>
+              <input value={customEndpoint} onChange={e => setCustomEndpoint(e.target.value)}
+                className="w-full rounded-lg px-3 py-2 text-sm outline-none border font-mono"
+                style={{ background: '#09090b', borderColor: '#27272a', color: '#f4f4f5' }}
+                placeholder="https://us-central1-aiplatform.googleapis.com" />
+            </div>
+          )}
 
           {/* Limit field */}
           {resolvedType === 'ai_studio' ? (
