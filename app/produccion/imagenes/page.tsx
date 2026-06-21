@@ -16,16 +16,15 @@ interface Job {
   imageUrl?: string; errorMsg?: string
 }
 
-const MODELS = [
+const AI_STUDIO_MODELS = [
   { id: 'gemini-2.0-flash-preview-image-generation', label: 'NB 2.0 Flash Preview', price: 'FREE' },
   { id: 'gemini-2.0-flash-exp-image-generation',     label: 'NB 2.0 Flash EXP',     price: 'FREE' },
-  { id: 'gemini-2.5-flash-preview-05-20',            label: 'NB 2.5 Flash Preview',  price: 'FREE' },
-  { id: 'gemini-2.5-pro-exp-03-25',                  label: 'NB 2.5 Pro EXP',        price: 'FREE' },
-  { id: 'gemini-2.5-flash-image',                    label: 'NB 2.5 Flash Image',    price: 'FREE' },
-  { id: 'gemini-3.1-flash-image-preview',            label: 'NB 3.1 Flash Preview',  price: 'FREE' },
-  { id: 'gemini-3-pro-image-preview',                label: 'NB 3 Pro Preview',       price: 'FREE' },
-  { id: 'imagen-3.0-generate-002',                   label: 'Imagen 3.0',             price: '$0.040' },
-  { id: 'imagen-3.0-fast-generate-001',              label: 'Imagen 3.0 Fast',        price: '$0.020' },
+]
+
+const VERTEX_MODELS = [
+  { id: 'imagen-3.0-generate-002',      label: 'Imagen 3.0',       price: '$0.040' },
+  { id: 'imagen-3.0-fast-generate-001', label: 'Imagen 3.0 Fast',  price: '$0.020' },
+  { id: 'imagegeneration@006',          label: 'Imagen 2 (legacy)', price: '$0.020' },
 ]
 
 const RATIO_SHAPES: Record<string, { w: number; h: number }> = {
@@ -44,7 +43,7 @@ const RATIO_DIMS: Record<string, { w: number; h: number }> = {
 
 const RESOLUTIONS = ['512', '1K', '2K', '4K']
 
-const STATUS_ICONS: Record<JobStatus, React.ReactElement> = {
+const STATUS_ICONS = {
   waiting:    <Clock size={13} style={{ color: '#71717a' }} />,
   processing: <Loader2 size={13} className="animate-spin" style={{ color: '#fbbf24' }} />,
   completed:  <CheckCircle size={13} style={{ color: '#10b981' }} />,
@@ -109,7 +108,7 @@ export default function ProduccionImagenesPage() {
   const [promptsText, setPromptsText] = useState('')
   const [queue, setQueue] = useState<Job[]>([])
   const [isRunning, setIsRunning] = useState(false)
-  const [selectedModel, setSelectedModel] = useState(MODELS[0].id)
+  const [selectedModel, setSelectedModel] = useState(AI_STUDIO_MODELS[0].id)
   const [aspectRatio, setAspectRatio] = useState('16:9')
   const [resolution, setResolution] = useState('1K')
   const [systemPrompt, setSystemPrompt] = useState('')
@@ -122,14 +121,15 @@ export default function ProduccionImagenesPage() {
   const batchIdRef = useRef(`batch_${Date.now()}`)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const modelInfo = MODELS.find(m => m.id === selectedModel) ?? MODELS[0]
+  const models = apiCfg?.type === 'vertex' ? VERTEX_MODELS : AI_STUDIO_MODELS
+  const modelInfo = models.find(m => m.id === selectedModel) ?? models[0]
 
   // Load API config and queue from storage on mount
   useEffect(() => {
     const cfg = getApiConfig()
     if (cfg.apiKey) {
       setApiCfg(cfg)
-      setSelectedModel(cfg.model || MODELS[0].id)
+      setSelectedModel(cfg.model || AI_STUDIO_MODELS[0].id)
     }
     const saved = sessionStorage.getItem('ytf_queue')
     if (saved) { try { setQueue(JSON.parse(saved)) } catch { /* ignore */ } }
@@ -334,7 +334,7 @@ export default function ProduccionImagenesPage() {
                 <select value={selectedModel} onChange={e => setSelectedModel(e.target.value)}
                   className="w-full appearance-none rounded-lg px-3 py-2 text-sm pr-8 outline-none border"
                   style={{ background: '#09090b', borderColor: '#27272a', color: '#f4f4f5' }}>
-                  {MODELS.map(m => <option key={m.id} value={m.id}>{m.label} — {m.price}/img</option>)}
+                  {models.map(m => <option key={m.id} value={m.id}>{m.label} — {m.price}/img</option>)}
                 </select>
                 <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: '#71717a' }} />
               </div>
@@ -520,7 +520,7 @@ export default function ProduccionImagenesPage() {
                             <span style={{ color: job.status === 'completed' ? '#10b981' : job.status === 'error' ? '#ef4444' : job.status === 'processing' ? '#fbbf24' : '#71717a' }}>
                               {job.errorMsg ? (
                                 <span title={job.errorMsg} className="cursor-help underline decoration-dotted">
-                                  {job.errorMsg.length > 22 ? job.errorMsg.slice(0, 22) + '…' : job.errorMsg}
+                                  {job.errorMsg.length > 48 ? job.errorMsg.slice(0, 48) + '…' : job.errorMsg}
                                 </span>
                               ) : STATUS_LABELS[job.status]}
                             </span>
