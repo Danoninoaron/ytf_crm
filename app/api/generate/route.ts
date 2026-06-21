@@ -60,11 +60,15 @@ export async function POST(request: NextRequest) {
 
       if (!r.ok) {
         const e = await r.json().catch(() => ({}))
-        const msg = (e as { error?: { message?: string } }).error?.message || `Error ${r.status}`
+        const raw = e as { error?: { message?: string; status?: string } }
+        const googleMsg = raw.error?.message || `HTTP ${r.status}`
+        const googleStatus = raw.error?.status || ''
         const code = r.status
-        if (code === 429) return Response.json({ ok: false, error: 'Rate limit alcanzado. Reduce la concurrencia o espera.', code }, { status: 429 })
-        if (code === 401 || code === 403) return Response.json({ ok: false, error: 'API key inválida o sin permisos.', code }, { status: code })
-        return Response.json({ ok: false, error: msg, code }, { status: code })
+
+        // Always surface Google's exact error — never override with a vague label
+        let userMsg = `[${code}${googleStatus ? ' ' + googleStatus : ''}] ${googleMsg}`
+        if (code === 401 || code === 403) userMsg = `Permiso denegado: ${googleMsg}`
+        return Response.json({ ok: false, error: userMsg, code }, { status: code })
       }
 
       const d = await r.json()
