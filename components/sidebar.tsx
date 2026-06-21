@@ -9,10 +9,15 @@ import {
   Activity, Zap, Layers
 } from 'lucide-react'
 
-const navItems = [
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+type ChildItem = { href: string; label: string; icon: React.ElementType; disabled?: boolean }
+type NavItem =
+  | { kind: 'link'; href: string; label: string; icon: React.ElementType; disabled?: boolean }
+  | { kind: 'group'; label: string; icon: React.ElementType; children: ChildItem[] }
+
+const navItems: NavItem[] = [
+  { kind: 'link', href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   {
-    label: 'Producción', icon: Clapperboard,
+    kind: 'group', label: 'Producción', icon: Clapperboard,
     children: [
       { href: '/produccion/imagenes', label: 'Imágenes', icon: Image },
       { href: '/produccion/scripts', label: 'Scripts', icon: FileText, disabled: true },
@@ -20,9 +25,9 @@ const navItems = [
       { href: '/produccion/thumbnails', label: 'Thumbnails', icon: Layers, disabled: true },
     ]
   },
-  { href: '/biblioteca', label: 'Biblioteca', icon: Library },
-  { href: '/canales', label: 'Canales', icon: Youtube, disabled: true },
-  { href: '/apis', label: 'APIs', icon: Key },
+  { kind: 'link', href: '/biblioteca', label: 'Biblioteca', icon: Library },
+  { kind: 'link', href: '/canales', label: 'Canales', icon: Youtube, disabled: true },
+  { kind: 'link', href: '/apis', label: 'APIs', icon: Key },
 ]
 
 export default function Sidebar() {
@@ -46,7 +51,7 @@ export default function Sidebar() {
       {/* Nav */}
       <nav className="flex-1 p-2 space-y-0.5 overflow-y-auto">
         {navItems.map((item) => {
-          if ('children' in item && item.children) {
+          if (item.kind === 'group') {
             const isActive = pathname?.startsWith('/produccion')
             return (
               <div key={item.label}>
@@ -90,17 +95,18 @@ export default function Sidebar() {
             )
           }
 
-          const isActive = pathname === item.href
-          if ('disabled' in item && item.disabled) {
+          // kind === 'link'
+          if (item.disabled) {
             return (
-              <div key={'href' in item ? item.href : item.label} className="flex items-center gap-2.5 px-3 py-2 rounded-md text-sm cursor-not-allowed" style={{ color: '#3f3f46' }}>
+              <div key={item.href} className="flex items-center gap-2.5 px-3 py-2 rounded-md text-sm cursor-not-allowed" style={{ color: '#3f3f46' }}>
                 <item.icon size={15} />
                 <span>{item.label}</span>
               </div>
             )
           }
+          const isActive = pathname === item.href
           return (
-            <Link key={'href' in item ? item.href : item.label} href={'href' in item ? (item.href as string) : '#'}
+            <Link key={item.href} href={item.href}
               className="flex items-center gap-2.5 px-3 py-2 rounded-md text-sm transition-colors"
               style={{ color: isActive ? '#f4f4f5' : '#71717a', background: isActive ? '#27272a' : 'transparent' }}
             >
@@ -115,9 +121,7 @@ export default function Sidebar() {
       <div className="p-3 border-t space-y-2" style={{ borderColor: '#27272a' }}>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="relative w-2 h-2">
-              <div className="w-2 h-2 rounded-full" style={{ background: workerStatus === 'active' ? '#10b981' : workerStatus === 'error' ? '#ef4444' : '#52525b' }} />
-            </div>
+            <div className="w-2 h-2 rounded-full" style={{ background: workerStatus === 'active' ? '#10b981' : workerStatus === 'error' ? '#ef4444' : '#52525b' }} />
             <span className="text-xs" style={{ color: '#71717a' }}>
               {workerStatus === 'active' ? 'Procesando' : workerStatus === 'error' ? 'Error' : 'Idle'}
             </span>
