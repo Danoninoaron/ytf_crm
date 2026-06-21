@@ -4,20 +4,28 @@ import { useState, useRef, useCallback, useEffect } from 'react'
 import {
   Play, Plus, Trash2, Download, Eye, RefreshCw,
   ChevronDown, X, Loader2, CheckCircle, Clock, AlertCircle,
-  ZoomIn, Upload, Archive
+  ZoomIn, Upload, Archive, WifiOff, Settings
 } from 'lucide-react'
-import { addImages, getImages, saveImages, saveQueueStats, type GeneratedImage } from '@/lib/content-store'
+import { addImages, saveQueueStats, type GeneratedImage } from '@/lib/content-store'
+import { getApiConfig, type ApiConfig } from '@/lib/api-store'
 
 type JobStatus = 'waiting' | 'processing' | 'completed' | 'error'
 interface Job {
   id: string; prompt: string; status: JobStatus; model: string
-  aspectRatio: string; resolution: string; duration?: number; imageUrl?: string
+  aspectRatio: string; resolution: string; duration?: number
+  imageUrl?: string; errorMsg?: string
 }
 
 const MODELS = [
-  { id: 'gemini-2.0-flash-exp-image-generation', label: 'Gemini 2.0 Flash Image', price: '$0.039' },
-  { id: 'gemini-2.5-flash-preview-05-20', label: 'Gemini 2.5 Flash Preview', price: '$0.015' },
-  { id: 'imagen-3.0-generate-002', label: 'Imagen 3', price: '$0.040' },
+  { id: 'gemini-2.0-flash-preview-image-generation', label: 'NB 2.0 Flash Preview', price: 'FREE' },
+  { id: 'gemini-2.0-flash-exp-image-generation',     label: 'NB 2.0 Flash EXP',     price: 'FREE' },
+  { id: 'gemini-2.5-flash-preview-05-20',            label: 'NB 2.5 Flash Preview',  price: 'FREE' },
+  { id: 'gemini-2.5-pro-exp-03-25',                  label: 'NB 2.5 Pro EXP',        price: 'FREE' },
+  { id: 'gemini-2.5-flash-image',                    label: 'NB 2.5 Flash Image',    price: 'FREE' },
+  { id: 'gemini-3.1-flash-image-preview',            label: 'NB 3.1 Flash Preview',  price: 'FREE' },
+  { id: 'gemini-3-pro-image-preview',                label: 'NB 3 Pro Preview',       price: 'FREE' },
+  { id: 'imagen-3.0-generate-002',                   label: 'Imagen 3.0',             price: '$0.040' },
+  { id: 'imagen-3.0-fast-generate-001',              label: 'Imagen 3.0 Fast',        price: '$0.020' },
 ]
 
 const RATIO_SHAPES: Record<string, { w: number; h: number }> = {
@@ -36,20 +44,15 @@ const RATIO_DIMS: Record<string, { w: number; h: number }> = {
 
 const RESOLUTIONS = ['512', '1K', '2K', '4K']
 
-function promptSeed(prompt: string, ratio: string): string {
-  let h = 5381
-  const s = (prompt + ratio).toLowerCase().trim()
-  for (let i = 0; i < s.length; i++) { h = ((h << 5) + h) ^ s.charCodeAt(i); h = h >>> 0 }
-  return String((h % 899) + 100)
-}
-
-const STATUS_ICONS = {
+const STATUS_ICONS: Record<JobStatus, React.ReactElement> = {
   waiting:    <Clock size={13} style={{ color: '#71717a' }} />,
   processing: <Loader2 size={13} className="animate-spin" style={{ color: '#fbbf24' }} />,
   completed:  <CheckCircle size={13} style={{ color: '#10b981' }} />,
   error:      <AlertCircle size={13} style={{ color: '#ef4444' }} />,
 }
-const STATUS_LABELS = { waiting: 'En espera', processing: 'Procesando', completed: 'Completado', error: 'Error' }
+const STATUS_LABELS: Record<JobStatus, string> = {
+  waiting: 'En espera', processing: 'Procesando', completed: 'Completado', error: 'Error'
+}
 
 function AspectBtn({ ratio, selected, onClick }: { ratio: string; selected: boolean; onClick: () => void }) {
   const s = RATIO_SHAPES[ratio]
@@ -58,8 +61,7 @@ function AspectBtn({ ratio, selected, onClick }: { ratio: string; selected: bool
   const w = Math.round(s.w * scale)
   const h = Math.round(s.h * scale)
   return (
-    <button onClick={onClick}
-      title={ratio}
+    <button onClick={onClick} title={ratio}
       className="flex flex-col items-center justify-center gap-1 rounded-lg border transition-colors"
       style={{ width: 48, height: 56, padding: 4, flexShrink: 0,
         background: selected ? 'rgba(16,185,129,0.15)' : '#09090b',
@@ -70,6 +72,36 @@ function AspectBtn({ ratio, selected, onClick }: { ratio: string; selected: bool
         background: selected ? 'rgba(16,185,129,0.2)' : 'transparent' }} />
       <span style={{ fontSize: 8, color: selected ? '#34d399' : '#71717a', fontFamily: 'monospace', lineHeight: 1 }}>{ratio}</span>
     </button>
+  )
+}
+
+function NoApiBanner() {
+  return (
+    <div className="flex items-start gap-3 px-4 py-3 rounded-xl border mb-4"
+      style={{ background: 'rgba(239,68,68,0.06)', borderColor: 'rgba(239,68,68,0.25)' }}>
+      <WifiOff size={16} style={{ color: '#ef4444', flexShrink: 0, marginTop: 1 }} />
+      <div>
+        <p className="text-sm font-medium" style={{ color: '#ef4444' }}>No hay API configurada</p>
+        <p className="text-xs mt-0.5" style={{ color: '#71717a' }}>
+          Ve a <a href="/apis" className="underline" style={{ color: '#f87171' }}>Gestión de APIs</a> y configura tu clave de Nano Banana / Gemini antes de generar imágenes.
+        </p>
+      </div>
+    </div>
+  )
+}
+
+function UntestedBanner() {
+  return (
+    <div className="flex items-start gap-3 px-4 py-3 rounded-xl border mb-4"
+      style={{ background: 'rgba(251,191,36,0.06)', borderColor: 'rgba(251,191,36,0.25)' }}>
+      <Settings size={16} style={{ color: '#fbbf24', flexShrink: 0, marginTop: 1 }} />
+      <div>
+        <p className="text-sm font-medium" style={{ color: '#fbbf24' }}>API configurada pero sin probar</p>
+        <p className="text-xs mt-0.5" style={{ color: '#71717a' }}>
+          Puedes generar, pero te recomendamos hacer el <a href="/apis" className="underline" style={{ color: '#fde68a' }}>test de conexión</a> primero para confirmar que la clave es válida.
+        </p>
+      </div>
+    </div>
   )
 }
 
@@ -85,26 +117,41 @@ export default function ProduccionImagenesPage() {
   const [preview, setPreview] = useState<string | null>(null)
   const [refImages, setRefImages] = useState<{ url: string; name: string }[]>([])
   const [isZipping, setIsZipping] = useState(false)
+  const [apiCfg, setApiCfg] = useState<ApiConfig | null>(null)
   const runningRef = useRef(false)
   const batchIdRef = useRef(`batch_${Date.now()}`)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const modelInfo = MODELS.find(m => m.id === selectedModel) ?? MODELS[0]
 
-  // Persist queue to localStorage so it survives tab change within session
+  // Load API config and queue from storage on mount
   useEffect(() => {
+    const cfg = getApiConfig()
+    if (cfg.apiKey) {
+      setApiCfg(cfg)
+      setSelectedModel(cfg.model || MODELS[0].id)
+    }
     const saved = sessionStorage.getItem('ytf_queue')
-    if (saved) { try { setQueue(JSON.parse(saved)) } catch {} }
+    if (saved) { try { setQueue(JSON.parse(saved)) } catch { /* ignore */ } }
   }, [])
+
+  // Sync API config periodically (user may have changed it in APIs page)
+  useEffect(() => {
+    const id = setInterval(() => {
+      const cfg = getApiConfig()
+      setApiCfg(cfg.apiKey ? cfg : null)
+    }, 2000)
+    return () => clearInterval(id)
+  }, [])
+
+  // Persist queue
   useEffect(() => {
     sessionStorage.setItem('ytf_queue', JSON.stringify(queue))
-    const completed = queue.filter(j => j.status === 'completed').length
-    const errors    = queue.filter(j => j.status === 'error').length
     saveQueueStats({
       pending:        queue.filter(j => j.status === 'waiting').length,
       processing:     queue.filter(j => j.status === 'processing').length,
-      completedToday: completed,
-      errorsToday:    errors,
+      completedToday: queue.filter(j => j.status === 'completed').length,
+      errorsToday:    queue.filter(j => j.status === 'error').length,
       lastUpdated:    new Date().toISOString(),
     })
   }, [queue])
@@ -137,8 +184,12 @@ export default function ProduccionImagenesPage() {
 
   const startProduction = useCallback(async () => {
     if (isRunning || runningRef.current) return
+    const cfg = getApiConfig()
+    if (!cfg.apiKey?.trim()) return  // button is disabled but guard anyway
+
     const waiting = queue.filter(j => j.status === 'waiting')
     if (!waiting.length) return
+
     setIsRunning(true)
     runningRef.current = true
     const bid = batchIdRef.current
@@ -146,49 +197,81 @@ export default function ProduccionImagenesPage() {
 
     for (let i = 0; i < waiting.length; i += concurrency) {
       const batch = waiting.slice(i, i + concurrency)
+
+      // Mark batch as processing
       batch.forEach(job =>
         setQueue(prev => prev.map(j => j.id === job.id ? { ...j, status: 'processing' } : j))
       )
-      await new Promise(r => setTimeout(r, 1800 + Math.random() * 2200))
-      batch.forEach(job => {
-        const isError = Math.random() < 0.04
-        const dur = +(2.1 + Math.random() * 4.5).toFixed(1)
-        const seed = promptSeed(job.prompt, job.aspectRatio)
-        const dims = RATIO_DIMS[job.aspectRatio] ?? { w: 800, h: 450 }
-        const imageUrl = `https://picsum.photos/seed/${seed}/${dims.w}/${dims.h}`
 
-        setQueue(prev => prev.map(j =>
-          j.id === job.id ? { ...j, status: isError ? 'error' : 'completed', duration: dur, imageUrl: isError ? undefined : imageUrl } : j
-        ))
-
-        if (!isError) {
-          savedImages.push({
-            id: job.id,
-            name: `${job.prompt.slice(0, 28).replace(/[^a-z0-9]/gi, '_').toLowerCase()}_${seed}.webp`,
-            imageUrl,
-            prompt: job.prompt,
-            model: job.model,
-            aspectRatio: job.aspectRatio,
-            resolution: job.resolution,
-            batchId: bid,
-            duration: dur,
-            createdAt: new Date().toISOString(),
-            expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-            locked: false,
+      // Call real API concurrently within the batch
+      await Promise.all(batch.map(async (job) => {
+        const t0 = Date.now()
+        try {
+          const res = await fetch('/api/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              prompt: job.prompt,
+              model: cfg.model,
+              apiKey: cfg.apiKey,
+              apiType: cfg.type,
+              projectId: cfg.projectId,
+              region: cfg.region,
+              customEndpoint: cfg.customEndpoint,
+              systemPrompt,
+              aspectRatio: job.aspectRatio,
+            }),
           })
+
+          const data = await res.json()
+          const dur = +((Date.now() - t0) / 1000).toFixed(1)
+
+          if (data.ok) {
+            setQueue(prev => prev.map(j =>
+              j.id === job.id ? { ...j, status: 'completed', duration: dur, imageUrl: data.imageUrl } : j
+            ))
+            savedImages.push({
+              id: job.id,
+              name: `${job.prompt.slice(0, 28).replace(/[^a-z0-9]/gi, '_').toLowerCase()}_${Date.now()}.${data.mimeType?.includes('png') ? 'png' : 'jpg'}`,
+              imageUrl: data.imageUrl,
+              prompt: job.prompt,
+              model: cfg.model,
+              aspectRatio: job.aspectRatio,
+              resolution: job.resolution,
+              batchId: bid,
+              duration: dur,
+              createdAt: new Date().toISOString(),
+              expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+              locked: false,
+            })
+          } else {
+            setQueue(prev => prev.map(j =>
+              j.id === job.id ? { ...j, status: 'error', duration: dur, errorMsg: data.error || 'Error desconocido' } : j
+            ))
+          }
+        } catch (e: unknown) {
+          const dur = +((Date.now() - t0) / 1000).toFixed(1)
+          setQueue(prev => prev.map(j =>
+            j.id === job.id ? { ...j, status: 'error', duration: dur, errorMsg: e instanceof Error ? e.message : 'Error de red' } : j
+          ))
         }
-      })
+      }))
     }
 
     if (savedImages.length) addImages(savedImages)
     batchIdRef.current = `batch_${Date.now()}`
     setIsRunning(false)
     runningRef.current = false
-  }, [queue, isRunning, concurrency, modelInfo.label])
+  }, [queue, isRunning, concurrency, systemPrompt])
 
   const dlImage = (imageUrl: string, name: string) => {
     const a = document.createElement('a')
-    a.href = `/api/download?url=${encodeURIComponent(imageUrl)}&name=${encodeURIComponent(name)}`
+    // Same-origin: direct download. Cross-origin: proxy.
+    if (imageUrl.startsWith('/')) {
+      a.href = imageUrl
+    } else {
+      a.href = `/api/download?url=${encodeURIComponent(imageUrl)}&name=${encodeURIComponent(name)}`
+    }
     a.download = name
     document.body.appendChild(a); a.click(); document.body.removeChild(a)
   }
@@ -202,13 +285,13 @@ export default function ProduccionImagenesPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          images: items.map((j, i) => ({
+          images: items.map((j, idx) => ({
             url: j.imageUrl!,
-            name: `${j.prompt.slice(0, 28).replace(/[^a-z0-9]/gi, '_').toLowerCase()}_${i + 1}.jpg`
+            name: `${j.prompt.slice(0, 28).replace(/[^a-z0-9]/gi, '_').toLowerCase()}_${idx + 1}.jpg`
           }))
         })
       })
-      if (!res.ok) throw new Error()
+      if (!res.ok) throw new Error('ZIP error')
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
@@ -219,10 +302,13 @@ export default function ProduccionImagenesPage() {
     setIsZipping(false)
   }
 
-  const completedJobs  = queue.filter(j => j.status === 'completed')
-  const waitingCount   = queue.filter(j => j.status === 'waiting').length
-  const processingCount= queue.filter(j => j.status === 'processing').length
-  const promptLines    = promptsText.split('\n').filter(p => p.trim()).length
+  const completedJobs   = queue.filter(j => j.status === 'completed')
+  const waitingCount    = queue.filter(j => j.status === 'waiting').length
+  const processingCount = queue.filter(j => j.status === 'processing').length
+  const promptLines     = promptsText.split('\n').filter(p => p.trim()).length
+  const hasApi          = !!apiCfg?.apiKey?.trim()
+  const apiReady        = hasApi && apiCfg?.testStatus === 'ok'
+  const canRun          = hasApi && !isRunning && waitingCount > 0
 
   return (
     <div className="p-6 space-y-5 max-w-7xl">
@@ -231,10 +317,13 @@ export default function ProduccionImagenesPage() {
         <h1 className="text-xl font-semibold" style={{ color: '#f4f4f5' }}>Generación de imágenes</h1>
       </div>
 
+      {/* API status banners */}
+      {!hasApi && <NoApiBanner />}
+      {hasApi && !apiReady && <UntestedBanner />}
+
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
-        {/* Left: Config + Prompts */}
+        {/* Left: Config */}
         <div className="xl:col-span-1 space-y-4">
-          {/* Section A */}
           <div className="rounded-xl border p-5 space-y-4" style={{ background: '#18181b', borderColor: '#27272a' }}>
             <h2 className="text-sm font-medium" style={{ color: '#f4f4f5' }}>A · Configuración del batch</h2>
 
@@ -251,7 +340,7 @@ export default function ProduccionImagenesPage() {
               </div>
             </div>
 
-            {/* Aspect ratio — shaped buttons */}
+            {/* Aspect ratio */}
             <div>
               <label className="text-xs mb-2 block" style={{ color: '#71717a' }}>Aspect ratio</label>
               <div className="flex flex-wrap gap-1.5">
@@ -332,7 +421,7 @@ export default function ProduccionImagenesPage() {
             </div>
           </div>
 
-          {/* Section B */}
+          {/* Section B: Prompts */}
           <div className="rounded-xl border p-5 space-y-3" style={{ background: '#18181b', borderColor: '#27272a' }}>
             <h2 className="text-sm font-medium" style={{ color: '#f4f4f5' }}>B · Prompts</h2>
             <textarea value={promptsText} onChange={e => setPromptsText(e.target.value)}
@@ -342,7 +431,7 @@ export default function ProduccionImagenesPage() {
               style={{ background: '#09090b', borderColor: '#27272a', color: '#f4f4f5' }} />
             <div className="flex items-center justify-between">
               <span className="text-xs" style={{ color: '#71717a' }}>
-                {promptLines} prompts · est. {(promptLines * parseFloat(modelInfo.price.replace('$', '') || '0')).toFixed(3)} USD
+                {promptLines} prompts
               </span>
               <button onClick={addToQueue}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium"
@@ -363,22 +452,31 @@ export default function ProduccionImagenesPage() {
               </div>
             )}
 
-            <button onClick={startProduction} disabled={isRunning || waitingCount === 0}
+            <button
+              onClick={hasApi ? startProduction : undefined}
+              disabled={!canRun}
               className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-semibold transition-colors"
               style={{
-                background: isRunning || waitingCount === 0 ? '#27272a' : '#10b981',
-                color: isRunning || waitingCount === 0 ? '#52525b' : '#000',
-                cursor: isRunning || waitingCount === 0 ? 'not-allowed' : 'pointer'
+                background: !hasApi ? 'rgba(239,68,68,0.1)' : canRun ? '#10b981' : '#27272a',
+                color: !hasApi ? '#ef4444' : canRun ? '#000' : '#52525b',
+                cursor: canRun ? 'pointer' : 'not-allowed',
+                borderWidth: !hasApi ? 1 : 0,
+                borderStyle: 'solid',
+                borderColor: !hasApi ? 'rgba(239,68,68,0.3)' : 'transparent',
               }}>
-              {isRunning ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
-              {isRunning ? `Procesando ${processingCount} jobs...` : 'Iniciar producción'}
+              {!hasApi ? (
+                <><WifiOff size={14} />Sin API configurada</>
+              ) : isRunning ? (
+                <><Loader2 size={14} className="animate-spin" />Procesando {processingCount} jobs...</>
+              ) : (
+                <><Play size={14} />Iniciar producción</>
+              )}
             </button>
           </div>
         </div>
 
         {/* Right: Queue + Gallery */}
         <div className="xl:col-span-2 space-y-4">
-          {/* Empty state */}
           {queue.length === 0 && (
             <div className="rounded-xl border flex flex-col items-center justify-center py-20" style={{ background: '#18181b', borderColor: '#27272a' }}>
               <div className="w-12 h-12 rounded-xl mb-4 flex items-center justify-center" style={{ background: '#27272a' }}>
@@ -389,7 +487,6 @@ export default function ProduccionImagenesPage() {
             </div>
           )}
 
-          {/* Section C: Queue */}
           {queue.length > 0 && (
             <div className="rounded-xl border overflow-hidden" style={{ background: '#18181b', borderColor: '#27272a' }}>
               <div className="flex items-center justify-between px-5 py-3 border-b" style={{ borderColor: '#27272a' }}>
@@ -417,11 +514,15 @@ export default function ProduccionImagenesPage() {
                         <td className="px-4 py-2.5 max-w-[160px]">
                           <span className="block truncate font-mono" style={{ color: '#a1a1aa' }}>{job.prompt}</span>
                         </td>
-                        <td className="px-4 py-2.5">
+                        <td className="px-4 py-2.5 min-w-[140px]">
                           <div className="flex items-center gap-1.5">
                             {STATUS_ICONS[job.status]}
                             <span style={{ color: job.status === 'completed' ? '#10b981' : job.status === 'error' ? '#ef4444' : job.status === 'processing' ? '#fbbf24' : '#71717a' }}>
-                              {STATUS_LABELS[job.status]}
+                              {job.errorMsg ? (
+                                <span title={job.errorMsg} className="cursor-help underline decoration-dotted">
+                                  {job.errorMsg.length > 22 ? job.errorMsg.slice(0, 22) + '…' : job.errorMsg}
+                                </span>
+                              ) : STATUS_LABELS[job.status]}
                             </span>
                           </div>
                         </td>
@@ -438,7 +539,7 @@ export default function ProduccionImagenesPage() {
                               </>
                             )}
                             {job.status === 'error' && (
-                              <button className="p-1 rounded hover:bg-[#27272a]"><RefreshCw size={12} style={{ color: '#71717a' }} /></button>
+                              <button onClick={() => setQueue(prev => prev.map(j => j.id === job.id ? { ...j, status: 'waiting', errorMsg: undefined } : j))} className="p-1 rounded hover:bg-[#27272a]" title="Reintentar"><RefreshCw size={12} style={{ color: '#71717a' }} /></button>
                             )}
                             {job.status === 'waiting' && (
                               <button onClick={() => removeJob(job.id)} className="p-1 rounded hover:bg-[#27272a]"><Trash2 size={12} style={{ color: '#71717a' }} /></button>
@@ -453,7 +554,6 @@ export default function ProduccionImagenesPage() {
             </div>
           )}
 
-          {/* Section D: Gallery */}
           {completedJobs.length > 0 && (
             <div className="rounded-xl border" style={{ background: '#18181b', borderColor: '#27272a' }}>
               <div className="flex items-center justify-between px-5 py-3 border-b" style={{ borderColor: '#27272a' }}>
@@ -475,7 +575,7 @@ export default function ProduccionImagenesPage() {
               <div className="p-4 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
                 {completedJobs.map(job => (
                   <div key={job.id} className="group relative rounded-lg overflow-hidden border"
-                    style={{ borderColor: '#27272a', aspectRatio: (RATIO_DIMS[job.aspectRatio]?.w ?? 16) + '/' + (RATIO_DIMS[job.aspectRatio]?.h ?? 9) }}>
+                    style={{ borderColor: '#27272a', aspectRatio: `${RATIO_DIMS[job.aspectRatio]?.w ?? 16}/${RATIO_DIMS[job.aspectRatio]?.h ?? 9}` }}>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={job.imageUrl} alt={job.prompt} className="w-full h-full object-cover" />
                     <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2"
@@ -516,7 +616,7 @@ export default function ProduccionImagenesPage() {
             </button>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={preview} alt="Preview" className="w-full rounded-xl" />
-            <button onClick={() => dlImage(preview, `preview_${Date.now()}.jpg`)}
+            <button onClick={() => dlImage(preview, `ytf_preview_${Date.now()}.jpg`)}
               className="absolute bottom-4 right-4 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium"
               style={{ background: '#10b981', color: '#000' }}>
               <Download size={12} />Descargar

@@ -1,10 +1,23 @@
 'use client'
 
-import { useState } from 'react'
-import { Eye, EyeOff, Wifi, WifiOff, ChevronDown, ChevronRight, AlertTriangle, CheckCircle, Loader2, Zap } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { Eye, EyeOff, Wifi, WifiOff, ChevronDown, ChevronRight, AlertTriangle, CheckCircle, Loader2, Zap, Save } from 'lucide-react'
+import { getApiConfig, saveApiConfig, type ApiConfig } from '@/lib/api-store'
 
 type ApiType = 'ai_studio' | 'vertex'
 type TestStatus = 'idle' | 'testing' | 'ok' | 'error'
+
+const MODELS = [
+  { id: 'gemini-2.0-flash-preview-image-generation', label: 'Nano Banana 2.0 Flash Preview', tier: 'FREE' },
+  { id: 'gemini-2.0-flash-exp-image-generation',     label: 'Nano Banana 2.0 Flash EXP',     tier: 'FREE' },
+  { id: 'gemini-2.5-flash-preview-05-20',            label: 'Nano Banana 2.5 Flash Preview',  tier: 'FREE' },
+  { id: 'gemini-2.5-pro-exp-03-25',                  label: 'Nano Banana 2.5 Pro EXP',        tier: 'FREE' },
+  { id: 'gemini-2.5-flash-image',                    label: 'Nano Banana 2.5 Flash Image',    tier: 'FREE' },
+  { id: 'gemini-3.1-flash-image-preview',            label: 'Nano Banana 3.1 Flash Preview',  tier: 'FREE' },
+  { id: 'gemini-3-pro-image-preview',                label: 'Nano Banana 3 Pro Preview',      tier: 'FREE' },
+  { id: 'imagen-3.0-generate-002',                   label: 'Imagen 3.0 Generate',            tier: '$0.040/img' },
+  { id: 'imagen-3.0-fast-generate-001',              label: 'Imagen 3.0 Fast',                tier: '$0.020/img' },
+]
 
 function detectApiType(key: string): ApiType {
   return key.startsWith('AIza') ? 'ai_studio' : 'vertex'
@@ -40,53 +53,95 @@ function MaskedInput({ value, onChange, placeholder }: { value: string; onChange
   )
 }
 
-function Input({ value, onChange, placeholder, defaultValue }: { value?: string; onChange?: (v: string) => void; placeholder?: string; defaultValue?: string }) {
-  return (
-    <input
-      type="text"
-      value={value}
-      defaultValue={defaultValue}
-      onChange={e => onChange?.(e.target.value)}
-      placeholder={placeholder}
-      className="w-full rounded-lg px-3 py-2 text-sm outline-none border"
-      style={{ background: '#09090b', borderColor: '#27272a', color: '#f4f4f5' }}
-    />
-  )
-}
-
-function TestButton({ status, onTest }: { status: TestStatus; onTest: () => void }) {
-  return (
-    <div className="flex items-center justify-between pt-3 border-t mt-3" style={{ borderColor: '#27272a' }}>
-      <div className="flex items-center gap-2">
-        {status === 'ok' && <><CheckCircle size={14} style={{ color: '#10b981' }} /><span className="text-xs" style={{ color: '#10b981' }}>Conectado — 142ms</span></>}
-        {status === 'error' && <><WifiOff size={14} style={{ color: '#ef4444' }} /><span className="text-xs" style={{ color: '#ef4444' }}>Error de conexión</span></>}
-        {status === 'testing' && <><Loader2 size={14} className="animate-spin" style={{ color: '#fbbf24' }} /><span className="text-xs" style={{ color: '#fbbf24' }}>Probando...</span></>}
-        {status === 'idle' && <span className="text-xs" style={{ color: '#52525b' }}>No probado aún</span>}
-      </div>
-      <button onClick={onTest}
-        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border"
-        style={{ borderColor: '#27272a', color: '#f4f4f5', background: '#09090b' }}>
-        <Wifi size={12} />Test conexión
-      </button>
-    </div>
-  )
-}
-
 function GeminiCard() {
   const [open, setOpen] = useState(true)
   const [apiKey, setApiKey] = useState('')
   const [apiType, setApiType] = useState<ApiType>('ai_studio')
   const [testStatus, setTestStatus] = useState<TestStatus>('idle')
+  const [testError, setTestError] = useState('')
+  const [latency, setLatency] = useState<number | null>(null)
   const [projectId, setProjectId] = useState('')
   const [region, setRegion] = useState('us-central1')
+  const [model, setModel] = useState(MODELS[0].id)
   const [imageLimit, setImageLimit] = useState('500')
   const [budget, setBudget] = useState('50')
+  const [customEndpoint, setCustomEndpoint] = useState('')
+  const [saved, setSaved] = useState(false)
+
+  // Load from localStorage on mount
+  useEffect(() => {
+    const cfg = getApiConfig()
+    if (cfg.apiKey) {
+      setApiKey(cfg.apiKey)
+      setApiType(cfg.type)
+      setModel(cfg.model)
+      setImageLimit(String(cfg.imageLimit))
+      setBudget(String(cfg.budget))
+      if (cfg.projectId) setProjectId(cfg.projectId)
+      if (cfg.region) setRegion(cfg.region)
+      if (cfg.customEndpoint) setCustomEndpoint(cfg.customEndpoint)
+      if (cfg.testStatus === 'ok') { setTestStatus('ok'); setLatency(cfg.latency ?? null) }
+      else if (cfg.testStatus === 'error') setTestStatus('error')
+    }
+  }, [])
 
   const resolvedType: ApiType = apiKey.trim() ? detectApiType(apiKey) : apiType
 
-  const runTest = () => {
+  const persist = useCallback((patch: Partial<ApiConfig>) => {
+    saveApiConfig(patch)
+    setSaved(true)
+    setTimeout(() => setSaved(false), 2000)
+  }, [])
+
+  const handleKeyChange = (v: string) => {
+    setApiKey(v)
+    if (v.trim()) {
+      const t = detectApiType(v)
+      setApiType(t)
+      persist({ apiKey: v, type: t, testStatus: 'untested' })
+      setTestStatus('idle')
+    }
+  }
+
+  const handleSave = () => {
+    persist({
+      apiKey, type: resolvedType, model,
+      projectId, region, customEndpoint,
+      imageLimit: parseInt(imageLimit, 10) || 500,
+      budget: parseFloat(budget) || 50,
+    })
+  }
+
+  const runTest = async () => {
+    if (!apiKey.trim()) {
+      setTestError('Introduce una API key primero.')
+      setTestStatus('error')
+      saveApiConfig({ testStatus: 'error' })
+      return
+    }
     setTestStatus('testing')
-    setTimeout(() => setTestStatus(Math.random() > 0.15 ? 'ok' : 'error'), 1800)
+    setTestError('')
+    try {
+      const r = await fetch('/api/test-connection', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apiKey, apiType: resolvedType, projectId, region, customEndpoint }),
+      })
+      const d = await r.json()
+      if (d.ok) {
+        setTestStatus('ok')
+        setLatency(d.latency)
+        saveApiConfig({ apiKey, type: resolvedType, model, projectId, region, customEndpoint, testStatus: 'ok', latency: d.latency, lastTested: new Date().toISOString() })
+      } else {
+        setTestStatus('error')
+        setTestError(d.error || 'Error desconocido')
+        saveApiConfig({ testStatus: 'error' })
+      }
+    } catch (e: unknown) {
+      setTestStatus('error')
+      setTestError(e instanceof Error ? e.message : 'Error de red')
+      saveApiConfig({ testStatus: 'error' })
+    }
   }
 
   return (
@@ -98,18 +153,24 @@ function GeminiCard() {
           <div>
             <div className="flex items-center gap-2">
               <span className="text-sm font-medium" style={{ color: '#f4f4f5' }}>Nano Banana / Gemini</span>
-              {testStatus === 'ok' && <div className="w-1.5 h-1.5 rounded-full" style={{ background: '#10b981' }} />}
-              {testStatus === 'error' && <div className="w-1.5 h-1.5 rounded-full" style={{ background: '#ef4444' }} />}
+              {testStatus === 'ok' && <div className="w-2 h-2 rounded-full" style={{ background: '#10b981' }} title="Conectado" />}
+              {testStatus === 'error' && <div className="w-2 h-2 rounded-full" style={{ background: '#ef4444' }} title="Error" />}
+              {testStatus === 'idle' && apiKey && <div className="w-2 h-2 rounded-full" style={{ background: '#fbbf24' }} title="Sin probar" />}
             </div>
-            <div className="text-xs mt-0.5" style={{ color: '#71717a' }}>Generación de imágenes — Google AI</div>
+            <div className="text-xs mt-0.5" style={{ color: '#71717a' }}>
+              {testStatus === 'ok' ? `Conectado · ${latency}ms` : testStatus === 'error' ? 'Error de conexión' : 'Generación de imágenes — Google AI'}
+            </div>
           </div>
         </div>
-        {open ? <ChevronDown size={16} style={{ color: '#71717a' }} /> : <ChevronRight size={16} style={{ color: '#71717a' }} />}
+        <div className="flex items-center gap-2">
+          {saved && <span className="text-[10px] px-2 py-0.5 rounded-full font-medium" style={{ background: 'rgba(16,185,129,0.15)', color: '#34d399' }}>Guardado</span>}
+          {open ? <ChevronDown size={16} style={{ color: '#71717a' }} /> : <ChevronRight size={16} style={{ color: '#71717a' }} />}
+        </div>
       </button>
 
       {open && (
         <div className="px-5 pb-5 border-t space-y-4" style={{ borderColor: '#27272a' }}>
-          {/* API type selector */}
+          {/* API type */}
           <div className="pt-4">
             <label className="text-xs mb-2 block" style={{ color: '#71717a' }}>Tipo de API</label>
             <div className="grid grid-cols-2 gap-2">
@@ -117,7 +178,7 @@ function GeminiCard() {
                 { id: 'ai_studio' as ApiType, label: 'Google AI Studio', sub: 'Plan gratuito · clave AIza...', color: '#10b981' },
                 { id: 'vertex' as ApiType, label: 'Vertex AI', sub: 'GCP · facturación por uso', color: '#818cf8' },
               ]).map(opt => (
-                <button key={opt.id} onClick={() => setApiType(opt.id)}
+                <button key={opt.id} onClick={() => { setApiType(opt.id); persist({ type: opt.id }) }}
                   className="text-left p-3 rounded-lg border transition-colors"
                   style={{
                     borderColor: resolvedType === opt.id ? opt.color : '#27272a',
@@ -134,9 +195,7 @@ function GeminiCard() {
             {apiKey.trim().length > 0 && (
               <div className="flex items-center gap-1.5 mt-2">
                 <Zap size={11} style={{ color: '#fbbf24' }} />
-                <span className="text-[10px]" style={{ color: '#fbbf24' }}>
-                  Tipo detectado automáticamente por el formato de la clave
-                </span>
+                <span className="text-[10px]" style={{ color: '#fbbf24' }}>Tipo detectado por el formato de la clave</span>
               </div>
             )}
           </div>
@@ -146,47 +205,63 @@ function GeminiCard() {
             <label className="text-xs mb-1.5 block" style={{ color: '#71717a' }}>API Key</label>
             <MaskedInput
               value={apiKey}
-              onChange={v => { setApiKey(v); if (v.trim()) setApiType(detectApiType(v)) }}
+              onChange={handleKeyChange}
               placeholder={resolvedType === 'ai_studio' ? 'AIza...' : 'Service account key o API key'}
             />
           </div>
 
-          {/* Model selector */}
+          {/* Model */}
           <div>
             <label className="text-xs mb-1.5 block" style={{ color: '#71717a' }}>Modelo por defecto</label>
             <div className="relative">
-              <select className="w-full appearance-none rounded-lg px-3 py-2 text-sm outline-none border pr-8"
+              <select value={model} onChange={e => { setModel(e.target.value); persist({ model: e.target.value }) }}
+                className="w-full appearance-none rounded-lg px-3 py-2 text-sm outline-none border pr-8"
                 style={{ background: '#09090b', borderColor: '#27272a', color: '#f4f4f5' }}>
-                <option>gemini-2.0-flash-exp-image-generation</option>
-                <option>gemini-2.5-flash-preview-05-20</option>
-                <option>imagen-3.0-generate-002</option>
+                {MODELS.map(m => (
+                  <option key={m.id} value={m.id}>{m.label} [{m.tier}]</option>
+                ))}
               </select>
               <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: '#71717a' }} />
             </div>
           </div>
 
-          {/* Vertex-only fields */}
+          {/* Vertex-only */}
           {resolvedType === 'vertex' && (
             <>
               <div>
                 <label className="text-xs mb-1.5 block" style={{ color: '#71717a' }}>Google Cloud Project ID</label>
-                <Input value={projectId} onChange={setProjectId} placeholder="my-gcp-project-id" />
+                <input value={projectId} onChange={e => setProjectId(e.target.value)}
+                  className="w-full rounded-lg px-3 py-2 text-sm outline-none border"
+                  style={{ background: '#09090b', borderColor: '#27272a', color: '#f4f4f5' }}
+                  placeholder="my-gcp-project-id" />
               </div>
               <div>
-                <label className="text-xs mb-1.5 block" style={{ color: '#71717a' }}>Región / Endpoint</label>
-                <Input value={region} onChange={setRegion} placeholder="us-central1" />
+                <label className="text-xs mb-1.5 block" style={{ color: '#71717a' }}>Región</label>
+                <input value={region} onChange={e => setRegion(e.target.value)}
+                  className="w-full rounded-lg px-3 py-2 text-sm outline-none border"
+                  style={{ background: '#09090b', borderColor: '#27272a', color: '#f4f4f5' }}
+                  placeholder="us-central1" />
               </div>
             </>
           )}
 
-          {/* Limit field — different per type */}
+          {/* Custom endpoint */}
+          <div>
+            <label className="text-xs mb-1.5 block" style={{ color: '#71717a' }}>
+              Endpoint personalizado <span style={{ color: '#52525b' }}>(opcional — deja vacío para usar Google AI Studio)</span>
+            </label>
+            <input value={customEndpoint} onChange={e => setCustomEndpoint(e.target.value)}
+              className="w-full rounded-lg px-3 py-2 text-sm outline-none border font-mono"
+              style={{ background: '#09090b', borderColor: '#27272a', color: '#f4f4f5' }}
+              placeholder="https://generativelanguage.googleapis.com" />
+          </div>
+
+          {/* Limit field */}
           {resolvedType === 'ai_studio' ? (
             <div>
               <label className="text-xs mb-1.5 block" style={{ color: '#71717a' }}>
-                Límite de imágenes diario
-                <span className="ml-2 px-1.5 py-0.5 rounded text-[10px]" style={{ background: 'rgba(16,185,129,0.1)', color: '#34d399' }}>
-                  Plan gratuito
-                </span>
+                Límite diario
+                <span className="ml-2 px-1.5 py-0.5 rounded text-[10px]" style={{ background: 'rgba(16,185,129,0.1)', color: '#34d399' }}>Plan gratuito</span>
               </label>
               <div className="flex gap-2 items-center">
                 <input type="number" value={imageLimit} onChange={e => setImageLimit(e.target.value)}
@@ -221,7 +296,33 @@ function GeminiCard() {
             </div>
           )}
 
-          <TestButton status={testStatus} onTest={runTest} />
+          {/* Actions */}
+          <div className="flex items-center justify-between pt-3 border-t" style={{ borderColor: '#27272a' }}>
+            <div className="flex items-center gap-2">
+              {testStatus === 'ok' && (
+                <><CheckCircle size={14} style={{ color: '#10b981' }} /><span className="text-xs" style={{ color: '#10b981' }}>Conectado — {latency}ms</span></>
+              )}
+              {testStatus === 'error' && (
+                <><WifiOff size={14} style={{ color: '#ef4444' }} /><span className="text-xs max-w-[200px] truncate" style={{ color: '#ef4444' }}>{testError || 'Error de conexión'}</span></>
+              )}
+              {testStatus === 'testing' && (
+                <><Loader2 size={14} className="animate-spin" style={{ color: '#fbbf24' }} /><span className="text-xs" style={{ color: '#fbbf24' }}>Probando...</span></>
+              )}
+              {testStatus === 'idle' && <span className="text-xs" style={{ color: '#52525b' }}>Sin probar</span>}
+            </div>
+            <div className="flex items-center gap-2">
+              <button onClick={handleSave}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border"
+                style={{ borderColor: '#27272a', color: '#f4f4f5', background: '#09090b' }}>
+                <Save size={11} />Guardar
+              </button>
+              <button onClick={runTest}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border"
+                style={{ borderColor: '#27272a', color: '#f4f4f5', background: '#09090b' }}>
+                <Wifi size={12} />Test conexión
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -244,7 +345,7 @@ function LockedCard({ name, icon, sub }: { name: string; icon: string; sub: stri
       </button>
       {open && (
         <div className="px-5 pb-5 border-t" style={{ borderColor: '#27272a' }}>
-          <div className="pt-4 flex items-center gap-3 py-4 px-4 rounded-lg" style={{ background: '#09090b' }}>
+          <div className="pt-4 flex items-center gap-3 px-4 py-4 rounded-lg" style={{ background: '#09090b' }}>
             <span className="text-2xl">🔒</span>
             <div>
               <div className="text-sm font-medium" style={{ color: '#71717a' }}>Disponible en la siguiente iteración</div>
@@ -264,7 +365,7 @@ export default function APIsPage() {
         <p className="text-xs mb-1" style={{ color: '#71717a' }}>Configuración</p>
         <h1 className="text-xl font-semibold" style={{ color: '#f4f4f5' }}>Gestión de APIs</h1>
         <p className="text-xs mt-1" style={{ color: '#71717a' }}>
-          La clave se detecta automáticamente: <span className="font-mono" style={{ color: '#34d399' }}>AIza...</span> = Google AI Studio &nbsp;·&nbsp; otro formato = Vertex AI
+          La configuración se guarda automáticamente en el navegador. Clave <span className="font-mono" style={{ color: '#34d399' }}>AIza...</span> = Google AI Studio · otro formato = Vertex AI
         </p>
       </div>
       <GeminiCard />
